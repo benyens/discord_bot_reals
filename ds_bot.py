@@ -3,7 +3,6 @@ import random
 from discord.ext import commands
 import os 
 
-token = "MTM2MTAxNDEwMjc0MjUzNjMxMw.GD6MDR.RrFcYhXdc3QmSl_w79WLJ966Bm63DcHjh76udY"
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 if DISCORD_TOKEN is None:
     raise ValueError("DISCORD_TOKEN environment variable not set.")
