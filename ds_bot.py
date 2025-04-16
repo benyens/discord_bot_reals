@@ -9,7 +9,6 @@ from discord import FFmpegPCMAudio
 from discord import PCMVolumeTransformer
 import nacl
 
-
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 if DISCORD_TOKEN is None:
     raise ValueError("DISCORD_TOKEN environment variable not set.")
@@ -40,6 +39,7 @@ NICKS_TEMPORALES = [
 ]
 
 RANKING_FILE = "ranking.json"
+
 # Cargar ranking desde archivo
 def cargar_ranking():
     if not os.path.exists(RANKING_FILE):
@@ -52,14 +52,11 @@ def guardar_ranking(ranking):
     with open(RANKING_FILE, "w") as f:
         json.dump(ranking, f, indent=4)
 
-# Función para meterse en un canal y reproducir audio
+# Función para reproducir audio
 async def meterse_y_reproducir_audio(voice_channel, audio_url):
     try:
         voice_client = await voice_channel.connect()
-
-        # Usa el path local al ejecutable descargado
         source = FFmpegPCMAudio(audio_url, executable=".config/npm/node_global/lib/node_modules/ffmpeg-static/ffmpeg")
-
         voice_client.play(source)
 
         while voice_client.is_playing():
@@ -71,7 +68,7 @@ async def meterse_y_reproducir_audio(voice_channel, audio_url):
     except Exception as e:
         print(f"[ERROR AUDIO] {e}")
         
-# Diccionario para guardar seguimiento
+# Seguimiento por canal
 channel_tracking = {}
 
 @bot.event
@@ -79,88 +76,74 @@ async def on_voice_state_update(member, before, after):
     # Cuando alguien entra a un canal de voz
     if after.channel and (not before.channel or before.channel != after.channel):
         channel = after.channel
-        print(f"[JOIN] {member.display_name} entró a {channel.name} - Total:                     {len(channel.members)}")
+        print(f"[JOIN] {member.display_name} entró a {channel.name} - Total: {len(channel.members)}")
 
         if len(channel.members) >= 3:
             print(f"[TRACKING STARTED] Canal '{channel.name}' tiene 3 o más personas.")
-            channel_tracking[channel.id] = {
-                "members": set(m.id for m in channel.members),
-                "last_member": None
-            }
-            
-        # --- MODO CAÓTICO RANDOM DE AUDIO ---
-        #if len(channel.members) >= 2 and not channel.guild.voice_client:
-        #    probabilidad = 69
-        #    print(f"[CHECK CAÓTICO] {len(channel.members)} personas en {channel.name} - Chance: {probabilidad}/500")
+            channel_tracking[channel.id] = True
 
-        #    if probabilidad == 69:  # El número mágico
-        #        print(f"[ACTIVADO] 🎲 Entrando al canal {channel.name} con audio misterioso...")
-        #        await meterse_y_reproducir_audio(channel, "callate-perkin.mp3")
-
-    # Cuando alguien sale o cambia de canal
+    # Cuando alguien sale de un canal
     if before.channel and (not after.channel or before.channel != after.channel):
         channel = before.channel
-        print(f"[LEAVE] {member.display_name} salió de {channel.name} - Total:               {len(channel.members) - 1}")
+        print(f"[LEAVE] {member.display_name} salió de {channel.name} - Total: {len(channel.members) - 1}")
 
-        if channel.id in channel_tracking:
-            tracking = channel_tracking[channel.id]
-            tracking["members"].discard(member.id)
-            tracking["last_member"] = member
-            print(f"[UPDATE] {member.display_name} eliminado de tracking. Quedan: {len(tracking['members'])}")
+        # Verifica si el canal estaba siendo trackeado y ya no queda nadie
+        if channel.id in channel_tracking and len(channel.members) == 0:
+            print(f"[LAST OUT] {member.display_name} fue el último en salir del canal '{channel.name}'")
 
-            if len(tracking["members"]) == 0:
-                print(f"[LAST OUT] {member.display_name} fue el último en salir del canal '{channel.name}'")
+            # Evita ejecuciones múltiples
+            del channel_tracking[channel.id]
 
-                last_user = tracking["last_member"]
-                random_gif = random.choice(GIF_LIST)
+            last_user = member
+            random_gif = random.choice(GIF_LIST)
 
-                text_channel = discord.utils.get(channel.guild.text_channels,                             name="general-freaky👅")
+            text_channel = discord.utils.get(channel.guild.text_channels, name="general-freaky👅")
 
-                # Cargar y actualizar ranking
-                ranking = cargar_ranking()
-                user_id = str(member.id)
+            # Cargar y actualizar ranking
+            ranking = cargar_ranking()
+            user_id = str(member.id)
 
-                if user_id in ranking:
-                    ranking[user_id]["count"] += 1
-                else:
-                    ranking[user_id] = {
-                        "name": member.display_name,
-                        "count": 1
+            if user_id in ranking:
+                ranking[user_id]["count"] += 1
+            else:
+                ranking[user_id] = {
+                    "name": member.display_name,
+                    "count": 1
                 }
 
-                guardar_ranking(ranking)
-                print(f"[RANKING] {member.display_name} ahora tiene {ranking[user_id] ['count']} puntos.")
-                if text_channel:
-                    print(f"[SEND] Enviando mensaje a #{text_channel.name}")
-                    await text_channel.send(f"🏳️‍🌈 **{last_user.display_name}** 🏳️‍🌈 fue el último en salir del canal de voz...")
-                    await text_channel.send(random_gif)
-                else:
-                    print("[ERROR] Canal 'general-freaky👅' no encontrado")
+            guardar_ranking(ranking)
+            print(f"[RANKING] {member.display_name} ahora tiene {ranking[user_id]['count']} puntos.")
 
-                # Guardar el nick original
-                original_nick = last_user.display_name
-                nuevo_nick = random.choice(NICKS_TEMPORALES)
+            if text_channel:
+                print(f"[SEND] Enviando mensaje a #{text_channel.name}")
+                await text_channel.send(f"🏳️‍🌈 **{last_user.display_name}** 🏳️‍🌈 fue el último en salir del canal de voz...")
+                await text_channel.send(random_gif)
+            else:
+                print("[ERROR] Canal 'general-freaky👅' no encontrado")
 
-                try:
-                    await last_user.edit(nick=nuevo_nick)
-                    print(f"[NICK] Cambiado apodo de {original_nick} a {nuevo_nick}")
+            # Cambiar apodo temporalmente
+            original_nick = last_user.display_name
+            nuevo_nick = random.choice(NICKS_TEMPORALES)
 
-                    # Espera 5 minutos y lo cambia de vuelta
-                    await asyncio.sleep(3600)
-                    await last_user.edit(nick=original_nick)
-                    print(f"[NICK] Apodo de {last_user.display_name} restaurado a {original_nick}")
+            try:
+                await last_user.edit(nick=nuevo_nick)
+                print(f"[NICK] Cambiado apodo de {original_nick} a {nuevo_nick}")
 
-                except discord.Forbidden:
-                    print("[ERROR] No tengo permisos para cambiar el apodo de ese usuario.")
-                except Exception as e:
-                    print(f"[ERROR] Falló el cambio de apodo: {e}")
-                    
+                await asyncio.sleep(3600)  # 1 hora
+                await last_user.edit(nick=original_nick)
+                print(f"[NICK] Apodo de {last_user.display_name} restaurado a {original_nick}")
 
+            except discord.Forbidden:
+                print("[ERROR] No tengo permisos para cambiar el apodo de ese usuario.")
+            except Exception as e:
+                print(f"[ERROR] Falló el cambio de apodo: {e}")
 
+# Comando ping
 @bot.command()
 async def ping(ctx):
     await ctx.send("🏓 ¡Estoy vivo!")
 
+# Comando ranking
 @bot.command()
 async def ranking(ctx):
     ranking = cargar_ranking()
@@ -169,7 +152,6 @@ async def ranking(ctx):
         await ctx.send("Todavía no hay nadie en el ranking 💤")
         return
 
-    # Ordenar por cantidad
     top = sorted(ranking.items(), key=lambda x: x[1]["count"], reverse=True)
 
     msg = "🏆 **Ranking de los más wekos** 🏳️‍🌈\n"
@@ -177,6 +159,6 @@ async def ranking(ctx):
         msg += f"{i}. **{data['name']}** - {data['count']} veces\n"
 
     await ctx.send(msg)
-    
+
 web_server.keep_alive()
 bot.run(DISCORD_TOKEN)
