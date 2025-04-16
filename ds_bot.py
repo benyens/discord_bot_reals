@@ -52,28 +52,11 @@ def guardar_ranking(ranking):
     with open(RANKING_FILE, "w") as f:
         json.dump(ranking, f, indent=4)
 
-# Función para reproducir audio
-async def meterse_y_reproducir_audio(voice_channel, audio_url):
-    try:
-        voice_client = await voice_channel.connect()
-        source = FFmpegPCMAudio(audio_url, executable=".config/npm/node_global/lib/node_modules/ffmpeg-static/ffmpeg")
-        voice_client.play(source)
-
-        while voice_client.is_playing():
-            await asyncio.sleep(0.5)
-
-        await voice_client.disconnect()
-        print("[AUDIO] Se desconectó correctamente")
-
-    except Exception as e:
-        print(f"[ERROR AUDIO] {e}")
-        
 # Seguimiento por canal
 channel_tracking = {}
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # Cuando alguien entra a un canal de voz
     if after.channel and (not before.channel or before.channel != after.channel):
         channel = after.channel
         print(f"[JOIN] {member.display_name} entró a {channel.name} - Total: {len(channel.members)}")
@@ -82,16 +65,12 @@ async def on_voice_state_update(member, before, after):
             print(f"[TRACKING STARTED] Canal '{channel.name}' tiene 3 o más personas.")
             channel_tracking[channel.id] = True
 
-    # Cuando alguien sale de un canal
     if before.channel and (not after.channel or before.channel != after.channel):
         channel = before.channel
         print(f"[LEAVE] {member.display_name} salió de {channel.name} - Total: {len(channel.members) - 1}")
 
-        # Verifica si el canal estaba siendo trackeado y ya no queda nadie
         if channel.id in channel_tracking and len(channel.members) == 0:
             print(f"[LAST OUT] {member.display_name} fue el último en salir del canal '{channel.name}'")
-
-            # Evita ejecuciones múltiples
             del channel_tracking[channel.id]
 
             last_user = member
@@ -114,36 +93,56 @@ async def on_voice_state_update(member, before, after):
             guardar_ranking(ranking)
             print(f"[RANKING] {member.display_name} ahora tiene {ranking[user_id]['count']} puntos.")
 
+            # Mandar mensajes
             if text_channel:
-                print(f"[SEND] Enviando mensaje a #{text_channel.name}")
                 await text_channel.send(f"🏳️‍🌈 **{last_user.display_name}** 🏳️‍🌈 fue el último en salir del canal de voz...")
                 await text_channel.send(random_gif)
+
+            # ROLES
+            count = ranking[user_id]["count"]
+            guild = member.guild
+
+            roles_por_rango = {
+                5: "🥉 Weko Nivel 1",
+                10: "🥈 Weko Supremo",
+                20: "🏆 Patriarca del Almohadismo"
+            }
+
+            for limite, role_name in roles_por_rango.items():
+                if count >= limite:
+                    role = discord.utils.get(guild.roles, name=role_name)
+                    if role and role not in member.roles:
+                        await member.add_roles(role)
+                        print(f"[ROLE] Se asignó el rol '{role_name}' a {member.display_name}")
+
+            # Apodo por ranking top 1
+            top = sorted(ranking.items(), key=lambda x: x[1]["count"], reverse=True)
+            if top and top[0][0] == user_id:
+                try:
+                    await last_user.edit(nick="👑 Supremo Weko 👑")
+                    print(f"[NICK] {member.display_name} es ahora el Supremo Weko")
+                except discord.Forbidden:
+                    print("[ERROR] No tengo permisos para cambiar el apodo.")
+                except Exception as e:
+                    print(f"[ERROR NICK] {e}")
             else:
-                print("[ERROR] Canal 'general-freaky👅' no encontrado")
+                nuevo_nick = random.choice(NICKS_TEMPORALES)
+                try:
+                    await last_user.edit(nick=nuevo_nick)
+                    print(f"[NICK] Cambiado apodo de {member.display_name} a {nuevo_nick}")
 
-            # Cambiar apodo temporalmente
-            original_nick = last_user.display_name
-            nuevo_nick = random.choice(NICKS_TEMPORALES)
+                    await asyncio.sleep(3600)
+                    await last_user.edit(nick=member.display_name)
+                    print(f"[NICK] Apodo de {last_user.display_name} restaurado")
+                except discord.Forbidden:
+                    print("[ERROR] No tengo permisos para cambiar el apodo.")
+                except Exception as e:
+                    print(f"[ERROR NICK] {e}")
 
-            try:
-                await last_user.edit(nick=nuevo_nick)
-                print(f"[NICK] Cambiado apodo de {original_nick} a {nuevo_nick}")
-
-                await asyncio.sleep(3600)  # 1 hora
-                await last_user.edit(nick=original_nick)
-                print(f"[NICK] Apodo de {last_user.display_name} restaurado a {original_nick}")
-
-            except discord.Forbidden:
-                print("[ERROR] No tengo permisos para cambiar el apodo de ese usuario.")
-            except Exception as e:
-                print(f"[ERROR] Falló el cambio de apodo: {e}")
-
-# Comando ping
 @bot.command()
 async def ping(ctx):
     await ctx.send("🏓 ¡Estoy vivo!")
 
-# Comando ranking
 @bot.command()
 async def ranking(ctx):
     ranking = cargar_ranking()
